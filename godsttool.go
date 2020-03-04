@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 )
 
@@ -29,6 +30,49 @@ func findTransition(s time.Time, loc *time.Location) (time.Time, error) {
 	return s, nil
 }
 
+// locTransition encapsulates a single DST transition in a location.
+type locTransition struct {
+	t        time.Time
+	l        *time.Location
+	zone     string
+	timezone string
+}
+
+// newLocTransitions returns a slice of DST transitions for a location or an error.
+func newLocTransitions(location string) ([]*locTransition, error) {
+	loc, err := time.LoadLocation(location)
+	if err != nil {
+		return nil, err
+	}
+
+	dayOne := time.Date(year, 1, 1, 0, 0, 0, 0, loc)
+	t1, err := findTransition(dayOne, loc)
+	if err != nil {
+		return nil, err
+	}
+	zone1, _ := t1.Zone()
+
+	t2, err := findTransition(t1, loc)
+	if err != nil {
+		return nil, err
+	}
+	zone2, _ := t2.Zone()
+
+	return []*locTransition{
+		{
+			t:        t1,
+			zone:     zone1,
+			timezone: location,
+			l:        loc,
+		},
+		{
+			t:        t2,
+			zone:     zone2,
+			timezone: location,
+			l:        loc,
+		}}, nil
+}
+
 func main() {
 	locations := []string{
 		"Australia/Sydney",
@@ -36,24 +80,23 @@ func main() {
 		"Europe/Zurich",
 	}
 
+	var ts []*locTransition
+
 	for _, l := range locations {
-		fmt.Printf("Transitions for timezone: %s\n", l)
-		loc, err := time.LoadLocation(l)
+		lt, err := newLocTransitions(l)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		dayOne := time.Date(year, 1, 1, 0, 0, 0, 0, loc)
-		trOne, err := findTransition(dayOne, loc)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("First transition happens on: %s\n", trOne)
+		ts = append(ts, lt...)
+	}
 
-		trTwo, err := findTransition(trOne, loc)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("Second transition is on: %s\n", trTwo)
+	// Sort the timezone transitions in time order.
+	sort.Slice(ts, func(i, j int) bool {
+		return ts[i].t.Before(ts[j].t)
+	})
+
+	for _, s := range ts {
+		fmt.Printf("Transition: %s, Zone: %s\n", s.t, s.zone)
 	}
 }
